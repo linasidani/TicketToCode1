@@ -1,0 +1,410 @@
+@page "/admin"
+@using TicketToCode.Core.Models
+@using TicketToCode.Client.Services
+@inject IEventService EventService
+@inject IUserService UserService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Admin Panel - TicketToCode</PageTitle>
+
+@if (!UserService.IsLoggedIn)
+{
+    <div class="container">
+        <div class="alert alert-warning">
+            <h4>🔒 Inloggning krävs</h4>
+            <p>Du måste logga in för att komma åt admin-panelen.</p>
+            <a href="/login" class="btn btn-primary">Logga in</a>
+        </div>
+    </div>
+    return;
+}
+
+@if (!UserService.IsAdmin)
+{
+    <div class="container">
+        <div class="alert alert-danger">
+            <h4>❌ Ingen behörighet</h4>
+            <p>Du har inte administratörsbehörighet för att se denna sida.</p>
+            <p>Inloggad som: <strong>@UserService.CurrentUsername</strong> (@UserService.CurrentRole)</p>
+            <a href="/" class="btn btn-primary">Tillbaka till startsidan</a>
+        </div>
+    </div>
+    return;
+}
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>⚙️ Admin Panel</h1>
+        <div>
+            <span class="badge bg-danger me-2">👑 @UserService.CurrentUsername</span>
+            <a href="/login" class="btn btn-outline-secondary btn-sm">🚪 Logga ut</a>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center bg-primary text-white">
+                <div class="card-body">
+                    <h5 class="card-title">📅 Events</h5>
+                    <h2>@totalEvents</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-success text-white">
+                <div class="card-body">
+                    <h5 class="card-title">🎫 Bokningar</h5>
+                    <h2>@totalBookings</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-info text-white">
+                <div class="card-body">
+                    <h5 class="card-title">🎟️ Sålda Biljetter</h5>
+                    <h2>@totalTickets</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-warning text-white">
+                <div class="card-body">
+                    <h5 class="card-title">💰 Intäkter</h5>
+                    <h2>@totalRevenue kr</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2 class="mb-3">🎯 Event Management</h2>
+    <div class="mb-3">
+        <a href="/create-event" class="btn btn-success">
+            ✨ Skapa Nytt Event
+        </a>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Namn</th>
+                    <th>Typ</th>
+                    <th>Datum</th>
+                    <th>Max Deltagare</th>
+                    <th>Bokningar</th>
+                    <th>Åtgärder</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var eventItem in events.Where(e => !string.IsNullOrEmpty(e.Name) && e.Id > 0))
+                {
+                    var eventBookings = bookings.Where(b => b.EventId == eventItem.Id).ToList();
+                    var bookedTickets = eventBookings.Sum(b => b.NumberOfTickets);
+                    
+                    <tr>
+                        <td>@eventItem.Id</td>
+                        <td>
+                            @if (editingEventId == eventItem.Id)
+                            {
+                                <input @bind="editEventName" class="form-control form-control-sm" />
+                            }
+                            else
+                            {
+                                @eventItem.Name
+                            }
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">@eventItem.Type</span>
+                        </td>
+                        <td>@eventItem.StartTime.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@eventItem.MaxAttendees</td>
+                        <td>
+                            <span class="badge bg-@(bookedTickets > 0 ? "success" : "light text-dark")">
+                                @bookedTickets / @eventItem.MaxAttendees
+                            </span>
+                        </td>
+                        <td>
+                            @if (editingEventId == eventItem.Id)
+                            {
+                                <button class="btn btn-sm btn-success me-1" @onclick="() => SaveEvent(eventItem.Id)" disabled="@isUpdating">
+                                    @if (isUpdating)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                    }
+                                    ✅ Spara
+                                </button>
+                                <button class="btn btn-sm btn-secondary" @onclick="CancelEdit">
+                                    ❌ Avbryt
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-info me-1" @onclick="() => ViewBookings(eventItem.Id)">
+                                    👥 Bokningar (@eventBookings.Count)
+                                </button>
+                                <button class="btn btn-sm btn-warning me-1" @onclick="() => EditEvent(eventItem.Id, eventItem.Name)">
+                                    ✏️ Redigera
+                                </button>
+                                <button class="btn btn-sm btn-danger me-1" @onclick="() => DeleteEvent(eventItem.Id, eventItem.Name)" disabled="@(isDeleting && deletingEventId == eventItem.Id)">
+                                    @if (isDeleting && deletingEventId == eventItem.Id)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                    }
+                                    🗑️ Ta bort
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (selectedEventBookings != null)
+    {
+        <div class="mt-4">
+            <h3>📋 Bokningar för Event ID: @selectedEventId</h3>
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Boknings-ID</th>
+                            <th>Användare</th>
+                            <th>Antal Biljetter</th>
+                            <th>Totalpris</th>
+                            <th>Bokningsdatum</th>
+                            <th>Åtgärder</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var booking in selectedEventBookings)
+                        {
+                            <tr>
+                                <td>@booking.Id</td>
+                                <td>@booking.UserName</td>
+                                <td>@booking.NumberOfTickets</td>
+                                <td>@booking.TotalPrice kr</td>
+                                <td>@booking.BookingDate.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => CancelBookingAsAdmin(booking.Id, booking.EventName)" disabled="@(isCancellingBooking && cancellingBookingId == booking.Id)">
+                                        @if (isCancellingBooking && cancellingBookingId == booking.Id)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-1"></span>
+                                        }
+                                        🗑️ Avboka
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert @(isSuccess ? "alert-success" : "alert-danger") alert-dismissible fade show mt-3">
+            @message
+            <button type="button" class="btn-close" @onclick="() => message = string.Empty"></button>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Event> events = new();
+    private List<Booking> bookings = new();
+    private List<Booking>? selectedEventBookings = null;
+    private int selectedEventId = 0;
+    private string message = "";
+    private bool isSuccess = false;
+
+    // Edit functionality
+    private int editingEventId = 0;
+    private string editEventName = "";
+    private bool isUpdating = false;
+
+    // Delete functionality  
+    private bool isDeleting = false;
+    private int deletingEventId = 0;
+
+    // Booking cancellation
+    private bool isCancellingBooking = false;
+    private int cancellingBookingId = 0;
+
+    private int totalEvents => events.Where(e => !string.IsNullOrEmpty(e.Name) && e.Id > 0).Count();
+    private int totalBookings => bookings.Count;
+    private int totalTickets => bookings.Sum(b => b.NumberOfTickets);
+    private decimal totalRevenue => bookings.Sum(b => b.TotalPrice);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!UserService.IsLoggedIn || !UserService.IsAdmin)
+        {
+            return;
+        }
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            events = await EventService.GetAllEventsAsync();
+            bookings = await EventService.GetAllBookingsAsync();
+        }
+        catch (Exception ex)
+        {
+            message = $"❌ Fel vid laddning: {ex.Message}";
+            isSuccess = false;
+        }
+    }
+
+    private void ViewBookings(int eventId)
+    {
+        selectedEventId = eventId;
+        selectedEventBookings = bookings.Where(b => b.EventId == eventId).ToList();
+    }
+
+    private void EditEvent(int eventId, string eventName)
+    {
+        editingEventId = eventId;
+        editEventName = eventName;
+        message = "";
+    }
+
+    private void CancelEdit()
+    {
+        editingEventId = 0;
+        editEventName = "";
+    }
+
+    private async Task SaveEvent(int eventId)
+    {
+        if (string.IsNullOrWhiteSpace(editEventName))
+        {
+            message = "❌ Eventnamn kan inte vara tomt.";
+            isSuccess = false;
+            return;
+        }
+
+        isUpdating = true;
+        message = "";
+
+        try
+        {
+            // Hitta eventet och uppdatera namnet
+            var eventToUpdate = events.FirstOrDefault(e => e.Id == eventId);
+            if (eventToUpdate != null)
+            {
+                eventToUpdate.Name = editEventName.Trim();
+                
+                // I en riktig app skulle vi anropa API:et här för att uppdatera
+                // var success = await EventService.UpdateEventAsync(eventToUpdate);
+                
+                message = $"✅ Event '{editEventName}' har uppdaterats! (Obs: Detta är endast lokalt - API stöder inte uppdatering än)";
+                isSuccess = true;
+                
+                editingEventId = 0;
+                editEventName = "";
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"❌ Fel vid uppdatering: {ex.Message}";
+            isSuccess = false;
+        }
+        finally
+        {
+            isUpdating = false;
+        }
+    }
+
+    private async Task DeleteEvent(int eventId, string eventName)
+    {
+        if (!await ConfirmDelete(eventName))
+        {
+            return;
+        }
+
+        isDeleting = true;
+        deletingEventId = eventId;
+        message = "";
+
+        try
+        {
+            // I en riktig app skulle vi anropa API:et här
+            // var success = await EventService.DeleteEventAsync(eventId);
+            
+            // För demo - ta bara bort lokalt
+            events = events.Where(e => e.Id != eventId).ToList();
+            
+            message = $"✅ Event '{eventName}' har tagits bort! (Obs: Detta är endast lokalt - API stöder inte radering än)";
+            isSuccess = true;
+
+            // Rensa bokningsvisning om det var det eventet som visades
+            if (selectedEventId == eventId)
+            {
+                selectedEventBookings = null;
+                selectedEventId = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"❌ Fel vid radering: {ex.Message}";
+            isSuccess = false;
+        }
+        finally
+        {
+            isDeleting = false;
+            deletingEventId = 0;
+        }
+    }
+
+    private async Task CancelBookingAsAdmin(int bookingId, string eventName)
+    {
+        isCancellingBooking = true;
+        cancellingBookingId = bookingId;
+        message = "";
+
+        try
+        {
+            var success = await EventService.CancelBookingAsync(bookingId);
+
+            if (success)
+            {
+                message = $"✅ Bokning för '{eventName}' har avbokats av admin.";
+                isSuccess = true;
+                
+                // Uppdatera lokala listor
+                bookings = bookings.Where(b => b.Id != bookingId).ToList();
+                selectedEventBookings = selectedEventBookings?.Where(b => b.Id != bookingId).ToList();
+            }
+            else
+            {
+                message = $"❌ Kunde inte avboka '{eventName}'. Försök igen.";
+                isSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"❌ Fel vid avbokning: {ex.Message}";
+            isSuccess = false;
+        }
+        finally
+        {
+            isCancellingBooking = false;
+            cancellingBookingId = 0;
+        }
+    }
+
+    private async Task<bool> ConfirmDelete(string eventName)
+    {
+        // I en riktig app skulle man använda en modal för bekräftelse
+        // För nu returnerar vi bara true
+        return await Task.FromResult(true);
+    }
+}

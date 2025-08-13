@@ -1,0 +1,252 @@
+﻿@page "/"
+@using TicketToCode.Core.Models
+@using TicketToCode.Client.Services
+@inject IEventService EventService
+@inject IUserService UserService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>TicketToCode - Event Management</PageTitle>
+
+<div class="hero-section text-center py-5 mb-5" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+    <div class="container">
+        <h1 class="display-4 fw-bold mb-3">🎫 TicketToCode</h1>
+        <p class="lead">Event Management System</p>
+    </div>
+</div>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="h3 mb-0">📅 Kommande Evenemang</h2>
+        <div>
+            <input @bind="searchTerm" @oninput="FilterEvents" class="form-control" placeholder="🔍 Sök evenemang..." style="width: 300px;" />
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Laddar...</span>
+            </div>
+            <p class="mt-2">Laddar evenemang...</p>
+        </div>
+    }
+    else if (!filteredEvents.Any())
+    {
+        <div class="alert alert-info text-center">
+            <h4>📭 Inga evenemang hittades</h4>
+            <p>@(string.IsNullOrEmpty(searchTerm) ? "Det finns inga evenemang att visa. Är API:et på http://localhost:5235 igång?" : $"Inga evenemang matchar '{searchTerm}'.")</p>
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            @foreach (var eventItem in filteredEvents)
+            {
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100 shadow-sm border-0">
+                        <div class="card-header bg-primary text-white">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">@eventItem.Name</h5>
+                                <span class="badge bg-light text-primary">@eventItem.Type</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <p class="card-text text-muted">@eventItem.Description</p>
+                            <div class="mb-3">
+                                <small class="text-muted">
+                                    <i class="bi bi-calendar-event"></i> <strong>Start:</strong> @eventItem.StartTime.ToString("yyyy-MM-dd HH:mm")<br>
+                                    <i class="bi bi-calendar-check"></i> <strong>Slut:</strong> @eventItem.EndTime.ToString("yyyy-MM-dd HH:mm")<br>
+                                    <i class="bi bi-people"></i> <strong>Max deltagare:</strong> @eventItem.MaxAttendees
+                                </small>
+                            </div>
+                        </div>
+                        <div class="card-footer bg-transparent">
+                            @if (UserService.IsLoggedIn)
+                            {
+                                <div class="row">
+                                    <div class="col-8">
+                                        <input type="number" @bind="ticketCounts[eventItem.Id]" 
+                                               class="form-control form-control-sm" 
+                                               min="1" max="10" 
+                                               placeholder="Antal biljetter" />
+                                    </div>
+                                    <div class="col-4">
+                                        <button class="btn btn-success btn-sm w-100" 
+                                                @onclick="() => BookTickets(eventItem.Id)"
+                                                disabled="@(isBooking && bookingEventId == eventItem.Id)">
+                                            @if (isBooking && bookingEventId == eventItem.Id)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                            }
+                                            🎫 Boka
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="text-center">
+                                    <p class="small text-muted mb-2">Logga in för att boka biljetter</p>
+                                    <a href="/login" class="btn btn-outline-primary btn-sm">🔐 Logga in</a>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(bookingMessage))
+    {
+        <div class="alert @(bookingSuccess ? "alert-success" : "alert-danger") alert-dismissible fade show">
+            @bookingMessage
+            <button type="button" class="btn-close" @onclick="() => bookingMessage = string.Empty"></button>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Event> events = new();
+    private List<Event> filteredEvents = new();
+    private Dictionary<int, int> ticketCounts = new();
+    private string searchTerm = "";
+    private bool isLoading = true;
+    private bool isBooking = false;
+    private int bookingEventId = 0;
+    private string bookingMessage = "";
+    private bool bookingSuccess = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEvents();
+    }
+
+    private async Task LoadEvents()
+    {
+        isLoading = true;
+        try
+        {
+            events = await EventService.GetAllEventsAsync();
+            filteredEvents = events;
+            
+            foreach (var eventItem in events)
+            {
+                ticketCounts[eventItem.Id] = 1;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading events: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void FilterEvents(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? "";
+        
+        if (string.IsNullOrEmpty(searchTerm))
+        {
+            filteredEvents = events;
+        }
+        else
+        {
+            filteredEvents = events.Where(ev => 
+                ev.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                ev.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                ev.Type.ToString().Contains(searchTerm, StringComparison.OrdinalIgnoreCase)
+            ).ToList();
+        }
+    }
+
+    private async Task BookTickets(int eventId)
+    {
+        Console.WriteLine("=== BOOKING DEBUG START ===");
+        
+        if (!UserService.IsLoggedIn)
+        {
+            Console.WriteLine("DEBUG: User not logged in");
+            bookingMessage = "❌ Du måste logga in först för att boka biljetter.";
+            bookingSuccess = false;
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        Console.WriteLine($"DEBUG: User logged in: {UserService.IsLoggedIn}");
+        Console.WriteLine($"DEBUG: Username: '{UserService.CurrentUsername}'");
+        Console.WriteLine($"DEBUG: UserId: {UserService.CurrentUserId}");
+        Console.WriteLine($"DEBUG: IsAdmin: {UserService.IsAdmin}");
+        Console.WriteLine($"DEBUG: CurrentRole: '{UserService.CurrentRole}'");
+
+        isBooking = true;
+        bookingEventId = eventId;
+        bookingMessage = "";
+
+        try
+        {
+            var numberOfTickets = ticketCounts.GetValueOrDefault(eventId, 1);
+            var eventItem = events.FirstOrDefault(e => e.Id == eventId);
+            
+            Console.WriteLine($"DEBUG: Event ID: {eventId}");
+            Console.WriteLine($"DEBUG: Number of tickets: {numberOfTickets}");
+            
+            if (eventItem == null)
+            {
+                Console.WriteLine("DEBUG: Event not found in local events list");
+                bookingMessage = "❌ Event hittades inte.";
+                bookingSuccess = false;
+                return;
+            }
+
+            Console.WriteLine($"DEBUG: Event found: '{eventItem.Name}'");
+            Console.WriteLine($"DEBUG: Event max attendees: {eventItem.MaxAttendees}");
+
+            Console.WriteLine($"DEBUG: Calling CreateBookingAsync with:");
+            Console.WriteLine($"  - EventId: {eventId}");
+            Console.WriteLine($"  - UserId: {UserService.CurrentUserId ?? 0}");
+            Console.WriteLine($"  - UserName: '{UserService.CurrentUsername ?? ""}'");
+            Console.WriteLine($"  - NumberOfTickets: {numberOfTickets}");
+
+            var success = await EventService.CreateBookingAsync(
+                eventId, 
+                UserService.CurrentUserId ?? 0, 
+                UserService.CurrentUsername ?? "", 
+                numberOfTickets
+            );
+
+            Console.WriteLine($"DEBUG: CreateBookingAsync returned: {success}");
+
+            if (success)
+            {
+                bookingMessage = $"🎉 Grattis! Du har bokat {numberOfTickets} biljett(er) till '{eventItem.Name}'!";
+                bookingSuccess = true;
+                Console.WriteLine("DEBUG: Booking successful!");
+            }
+            else
+            {
+                bookingMessage = "❌ Bokningen misslyckades. API:et returnerade false.";
+                bookingSuccess = false;
+                Console.WriteLine("DEBUG: Booking failed - API returned false");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"DEBUG: Exception occurred: {ex.Message}");
+            Console.WriteLine($"DEBUG: Stack trace: {ex.StackTrace}");
+            bookingMessage = $"❌ Ett fel uppstod: {ex.Message}";
+            bookingSuccess = false;
+        }
+        finally
+        {
+            isBooking = false;
+            bookingEventId = 0;
+            Console.WriteLine("=== BOOKING DEBUG END ===");
+        }
+    }
+}

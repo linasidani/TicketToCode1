@@ -1,0 +1,171 @@
+@page "/create-event"
+@using TicketToCode.Core.Models
+@using TicketToCode.Client.Services
+@inject IEventService EventService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Skapa Event - TicketToCode</PageTitle>
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-success text-white text-center">
+                    <h3>✨ Skapa Nytt Event</h3>
+                </div>
+                <div class="card-body">
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger">@errorMessage</div>
+                    }
+                    
+                    @if (!string.IsNullOrEmpty(successMessage))
+                    {
+                        <div class="alert alert-success">@successMessage</div>
+                    }
+
+                    <form @onsubmit="HandleCreateEvent" @onsubmit:preventDefault="true">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Event Namn:</label>
+                                <input @bind="eventName" type="text" class="form-control" placeholder="T.ex. Rock Konsert 2025" required />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Event Typ:</label>
+                                <select @bind="eventType" class="form-select" required>
+                                    <option value="0">🎵 Concert</option>
+                                    <option value="1">🎪 Festival</option>
+                                    <option value="2">🎭 Theatre</option>
+                                    <option value="3">🎯 Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Beskrivning:</label>
+                            <textarea @bind="description" class="form-control" rows="3" placeholder="Beskriv ditt event..." required></textarea>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Start Datum & Tid:</label>
+                                <InputDate @bind-Value="startTime" Type="InputDateType.DateTimeLocal" class="form-control" />
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Slut Datum & Tid:</label>
+                                <InputDate @bind-Value="endTime" Type="InputDateType.DateTimeLocal" class="form-control" />
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Max Antal Deltagare:</label>
+                            <input @bind="maxAttendees" type="number" class="form-control" min="1" max="10000" placeholder="100" required />
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-success btn-lg" disabled="@isLoading">
+                                @if (isLoading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                }
+                                🎯 Skapa Event
+                            </button>
+                            <button type="button" class="btn btn-secondary" @onclick="GoBack">
+                                🔙 Tillbaka till Admin
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <hr class="my-4">
+                    
+                    <div class="text-center">
+                        <h5>💡 Tips för att skapa bra events:</h5>
+                        <ul class="list-unstyled text-muted">
+                            <li>• Använd beskrivande namn</li>
+                            <li>• Skriv tydlig beskrivning</li>
+                            <li>• Sätt realistiska datum</li>
+                            <li>• Tänk på kapacitet</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string eventName = "";
+    private string description = "";
+    private DateTime startTime = DateTime.Now.AddDays(7);
+    private DateTime endTime = DateTime.Now.AddDays(7).AddHours(3);
+    private int maxAttendees = 100;
+    private int eventType = 0;
+    private string errorMessage = "";
+    private string successMessage = "";
+    private bool isLoading = false;
+
+    private async Task HandleCreateEvent()
+    {
+        if (string.IsNullOrWhiteSpace(eventName) || string.IsNullOrWhiteSpace(description))
+        {
+            errorMessage = "Namn och beskrivning är obligatoriska";
+            return;
+        }
+
+        if (startTime >= endTime)
+        {
+            errorMessage = "Slutdatum måste vara efter startdatum";
+            return;
+        }
+
+        if (startTime <= DateTime.Now)
+        {
+            errorMessage = "Eventet måste vara i framtiden";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = "";
+        successMessage = "";
+
+        try
+        {
+            var newEvent = new Event
+            {
+                Name = eventName,
+                Description = description,
+                StartTime = startTime,
+                EndTime = endTime,
+                MaxAttendees = maxAttendees,
+                Type = (EventType)eventType
+            };
+
+            var success = await EventService.CreateEventAsync(newEvent);
+            
+            if (success)
+            {
+                successMessage = "Event skapat! Omdirigerar till admin...";
+                await Task.Delay(2000);
+                Navigation.NavigateTo("/admin");
+            }
+            else
+            {
+                errorMessage = "Kunde inte skapa event. Försök igen.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Fel vid skapande av event: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/admin");
+    }
+}

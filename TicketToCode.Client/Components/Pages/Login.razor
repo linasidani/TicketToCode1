@@ -1,0 +1,180 @@
+@page "/login"
+@using TicketToCode.Client.Services
+@inject IEventService EventService
+@inject IUserService UserService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Logga in - TicketToCode</PageTitle>
+
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-body p-4">
+                    <div class="text-center mb-4">
+                        <h2 class="text-primary">🔐 Logga in</h2>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger">
+                            @errorMessage
+                        </div>
+                    }
+
+                    @if (UserService.IsLoggedIn)
+                    {
+                        <div class="alert alert-success">
+                            <h4>✅ Inloggad!</h4>
+                            <p>Du är nu inloggad som: <strong>@UserService.CurrentUsername</strong></p>
+                            <p>Roll: <span class="badge bg-@(UserService.IsAdmin ? "danger" : "primary")">@UserService.CurrentRole</span></p>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-primary" @onclick="GoToHome">
+                                    🏠 Gå till startsidan
+                                </button>
+                                @if (UserService.IsAdmin)
+                                {
+                                    <button class="btn btn-warning" @onclick="GoToAdmin">
+                                        ⚙️ Admin Panel
+                                    </button>
+                                }
+                                <button class="btn btn-outline-secondary" @onclick="HandleLogout">
+                                    🚪 Logga ut
+                                </button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <EditForm Model="this" OnValidSubmit="HandleLogin">
+                            <div class="mb-3">
+                                <label class="form-label">Användarnamn:</label>
+                                <InputText @bind-Value="username" class="form-control" placeholder="admin eller testuser" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Lösenord:</label>
+                                <InputText @bind-Value="password" type="password" class="form-control" placeholder="••••••" />
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100 mb-3" disabled="@isLoading">
+                                @if (isLoading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                }
+                                Logga in
+                            </button>
+                        </EditForm>
+
+                        <hr />
+                        <div class="text-center">
+                            <h5>Demo användare:</h5>
+                            <div class="row">
+                                <div class="col-6">
+                                    <button class="btn btn-outline-danger btn-sm w-100" @onclick="LoginAsAdmin">
+                                        👑 Admin
+                                    </button>
+                                    <small class="text-muted">admin / admin123</small>
+                                </div>
+                                <div class="col-6">
+                                    <button class="btn btn-outline-primary btn-sm w-100" @onclick="LoginAsUser">
+                                        👤 Användare
+                                    </button>
+                                    <small class="text-muted">testuser / test123</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(debugMessage))
+                        {
+                            <div class="alert alert-info mt-3">
+                                <strong>Debug:</strong> @debugMessage
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string username = "";
+    private string password = "";
+    private string errorMessage = "";
+    private string debugMessage = "";
+    private bool isLoading = false;
+
+    private async Task HandleLogin()
+    {
+        isLoading = true;
+        errorMessage = "";
+        debugMessage = "";
+
+        try
+        {
+            var result = await EventService.LoginAsync(username, password);
+            
+            if (result.Success)
+            {
+                UserService.SetUser(result.Username, result.Role, result.UserId);
+                errorMessage = "";
+                debugMessage = $"Login lyckades! Roll: {result.Role}";
+                
+                await Task.Delay(1000);
+                
+                if (UserService.IsAdmin)
+                {
+                    Navigation.NavigateTo("/admin");
+                }
+                else
+                {
+                    Navigation.NavigateTo("/");
+                }
+            }
+            else
+            {
+                errorMessage = "Fel användarnamn eller lösenord.";
+                debugMessage = "API returnerade false - kontrollera credentials";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Ett fel uppstod vid inloggning.";
+            debugMessage = $"Exception: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoginAsAdmin()
+    {
+        username = "admin";
+        password = "admin123";
+        await HandleLogin();
+    }
+
+    private async Task LoginAsUser()
+    {
+        username = "testuser";
+        password = "test123";
+        await HandleLogin();
+    }
+
+    private void HandleLogout()
+    {
+        UserService.Logout();
+        Navigation.NavigateTo("/");
+    }
+
+    private void GoToHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private void GoToAdmin()
+    {
+        Navigation.NavigateTo("/admin");
+    }
+}

@@ -1,0 +1,289 @@
+@page "/my-bookings"
+@using TicketToCode.Core.Models
+@using TicketToCode.Client.Services
+@inject IEventService EventService
+@inject IUserService UserService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Mina Bokningar - TicketToCode</PageTitle>
+
+@if (!UserService.IsLoggedIn)
+{
+    <div class="container">
+        <div class="alert alert-warning">
+            <h4>🔒 Inloggning krävs</h4>
+            <p>Du måste logga in för att se dina bokningar.</p>
+            <a href="/login" class="btn btn-primary">Logga in</a>
+        </div>
+    </div>
+    return;
+}
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0">🎫 Mina Bokningar</h1>
+        <div>
+            <span class="badge bg-@(UserService.IsAdmin ? "danger" : "primary")">
+                @(UserService.IsAdmin ? "👑" : "👤") @UserService.CurrentUsername
+            </span>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Laddar...</span>
+            </div>
+            <p class="mt-2">Laddar dina bokningar...</p>
+        </div>
+    }
+    else if (!bookings.Any())
+    {
+        <div class="alert alert-info text-center">
+            <h4>📭 Inga bokningar än</h4>
+            <p>Du har inte gjort några bokningar än.</p>
+            <a href="/" class="btn btn-primary">🎯 Bläddra bland evenemang</a>
+        </div>
+    }
+    else
+    {
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card text-center bg-primary text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">📊 Totalt Bokningar</h5>
+                        <h2>@bookings.Count</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center bg-success text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">🎟️ Totala Biljetter</h5>
+                        <h2>@bookings.Sum(b => b.NumberOfTickets)</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center bg-info text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">💰 Total Kostnad</h5>
+                        <h2>@bookings.Sum(b => b.TotalPrice) kr</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center bg-warning text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">📅 Kommande Events</h5>
+                        <h2>@upcomingEvents</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">🎫 Alla Mina Bokningar</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Event</th>
+                                <th>Bokningsdatum</th>
+                                <th>Antal Biljetter</th>
+                                <th>Totalpris</th>
+                                <th>Status</th>
+                                <th>Åtgärder</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var booking in bookings.OrderByDescending(b => b.BookingDate))
+                            {
+                                var eventItem = events.FirstOrDefault(e => e.Id == booking.EventId);
+                                var isPastEvent = eventItem?.StartTime < DateTime.Now;
+                                var isUpcoming = eventItem?.StartTime > DateTime.Now;
+
+                                <tr class="@(isPastEvent ? "table-secondary" : "")">
+                                    <td>
+                                        <div>
+                                            <strong>@booking.EventName</strong>
+                                            @if (eventItem != null)
+                                            {
+                                                <br><small class="text-muted">
+                                                    📅 @eventItem.StartTime.ToString("yyyy-MM-dd HH:mm")
+                                                    <span class="badge bg-secondary ms-1">@eventItem.Type</span>
+                                                </small>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <small>@booking.BookingDate.ToString("yyyy-MM-dd HH:mm")</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-primary">@booking.NumberOfTickets st</span>
+                                    </td>
+                                    <td>
+                                        <strong>@booking.TotalPrice kr</strong>
+                                    </td>
+                                    <td>
+                                        @if (isPastEvent)
+                                        {
+                                            <span class="badge bg-secondary">🕒 Genomfört</span>
+                                        }
+                                        else if (isUpcoming)
+                                        {
+                                            <span class="badge bg-success">✨ Kommande</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-warning">❓ Okänd</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (!isCancelling || cancellingBookingId != booking.Id)
+                                        {
+                                            <button class="btn btn-outline-danger btn-sm" 
+                                                    @onclick="() => CancelBooking(booking.Id, booking.EventName)"
+                                                    title="Avboka denna bokning">
+                                                🗑️ Avboka
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-outline-danger btn-sm" disabled>
+                                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                                Avbokar...
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <div class="alert @(isSuccess ? "alert-success" : "alert-danger") alert-dismissible fade show mt-3">
+            @message
+            <button type="button" class="btn-close" @onclick="() => message = string.Empty"></button>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Booking> bookings = new();
+    private List<Event> events = new();
+    private bool isLoading = true;
+    private bool isCancelling = false;
+    private int cancellingBookingId = 0;
+    private string message = "";
+    private bool isSuccess = false;
+
+    private int upcomingEvents => events.Count(e => bookings.Any(b => b.EventId == e.Id) && e.StartTime > DateTime.Now);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Console.WriteLine("=== MyBookings OnInitializedAsync DEBUG ===");
+        Console.WriteLine($"UserService.IsLoggedIn: {UserService.IsLoggedIn}");
+        Console.WriteLine($"UserService.CurrentUsername: {UserService.CurrentUsername}");
+        Console.WriteLine($"UserService.CurrentUserId: {UserService.CurrentUserId}");
+        Console.WriteLine($"UserService.CurrentRole: {UserService.CurrentRole}");
+        
+        if (!UserService.IsLoggedIn)
+        {
+            Console.WriteLine("User not logged in - showing login required message");
+            return;
+        }
+
+        Console.WriteLine("User is logged in - proceeding to LoadData");
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        Console.WriteLine("=== LoadData DEBUG ===");
+        
+        try
+        {
+            if (UserService.CurrentUserId.HasValue)
+            {
+                Console.WriteLine($"Fetching bookings for userId: {UserService.CurrentUserId.Value}");
+                bookings = await EventService.GetUserBookingsAsync(UserService.CurrentUserId.Value);
+                Console.WriteLine($"Retrieved {bookings.Count} bookings");
+            }
+            else
+            {
+                Console.WriteLine("CurrentUserId is null!");
+            }
+
+            Console.WriteLine("Fetching events...");
+            events = await EventService.GetAllEventsAsync();
+            Console.WriteLine($"Retrieved {events.Count} events");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadData exception: {ex.Message}");
+            message = $"❌ Fel vid laddning av data: {ex.Message}";
+            isSuccess = false;
+        }
+        finally
+        {
+            isLoading = false;
+            Console.WriteLine("LoadData completed");
+        }
+    }
+
+    private async Task CancelBooking(int bookingId, string eventName)
+    {
+        Console.WriteLine($"=== CancelBooking DEBUG ===");
+        Console.WriteLine($"Cancelling booking ID: {bookingId}, Event: {eventName}");
+        
+        isCancelling = true;
+        cancellingBookingId = bookingId;
+        message = "";
+
+        try
+        {
+            Console.WriteLine("Calling EventService.CancelBookingAsync...");
+            var success = await EventService.CancelBookingAsync(bookingId);
+            Console.WriteLine($"Cancel result: {success}");
+
+            if (success)
+            {
+                message = $"✅ Bokningen för '{eventName}' har avbokats.";
+                isSuccess = true;
+                
+                Console.WriteLine("Removing booking from local list...");
+                bookings = bookings.Where(b => b.Id != bookingId).ToList();
+                Console.WriteLine($"Remaining bookings: {bookings.Count}");
+            }
+            else
+            {
+                message = $"❌ Kunde inte avboka '{eventName}'. Försök igen.";
+                isSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"CancelBooking exception: {ex.Message}");
+            message = $"❌ Fel vid avbokning: {ex.Message}";
+            isSuccess = false;
+        }
+        finally
+        {
+            isCancelling = false;
+            cancellingBookingId = 0;
+            Console.WriteLine("CancelBooking completed");
+        }
+    }
+}
